@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:crypto="http://www.mulesoft.org/schema/mule/crypto" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:salesforce="http://www.mulesoft.org/schema/mule/salesforce"
+	xmlns:bti="http://www.mulesoft.org/schema/mule/ee/bti" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/ee/bti http://www.mulesoft.org/schema/mule/ee/bti/current/mule-bti-ee.xsd
+http://www.mulesoft.org/schema/mule/salesforce http://www.mulesoft.org/schema/mule/salesforce/current/mule-salesforce.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/crypto http://www.mulesoft.org/schema/mule/crypto/current/mule-crypto.xsd">
+	<jms:config name="JMS_Config" doc:name="JMS Config" doc:id="eddefee8-6437-4b9a-86db-de73f67141df" >
+		<jms:active-mq-connection username="admin" password="admin" >
+			<jms:factory-configuration brokerUrl="tcp://localhost:61616"/>
+		</jms:active-mq-connection>
+	</jms:config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="6eea1ac0-1c0e-4765-b0b9-362d7b01d987" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="123456" database="employee"/>
+	</db:config>
+	<bti:transaction-manager doc:name="Bitronix Transaction Manager" doc:id="3af5a56d-51cb-46a3-b92a-a47efff179c4" />
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="46a7b6ab-a345-4865-931b-bc12b0cbe658" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<crypto:pgp-config name="Crypto_Pgp" doc:name="Crypto Pgp" doc:id="2f256151-98e5-44fa-99cb-a01df5a1c80a" privateKeyring="mule_private.gpg" >
+		<crypto:pgp-key-infos >
+			<crypto:pgp-asymmetric-key-info keyId="mule1234" fingerprint="F31D1C2C7D378EAE" passphrase="Enique@1234" />
+		</crypto:pgp-key-infos>
+	</crypto:pgp-config>
+	<crypto:pgp-config name="Crypto_Pgp1" doc:name="Crypto Pgp" doc:id="78e28af4-0f81-4fca-936d-b4ccc4924c10" publicKeyring="mule_pub.gpg" privateKeyring="mule_private.gpg" >
+		<crypto:pgp-key-infos >
+			<crypto:pgp-asymmetric-key-info keyId="laks12345" fingerprint="F31D1C2C7D378EAE" />
+			<crypto:pgp-asymmetric-key-info keyId="hman6789" fingerprint="F31D1C2C7D378EAE" passphrase="Enique@1234" />
+		</crypto:pgp-key-infos>
+	</crypto:pgp-config>
+	<flow name="transactionFlow" doc:id="ae90bafa-9c34-40fb-86fa-ea6ad89929c4" >
+		<jms:listener doc:name="On New Message" doc:id="31aa612f-c86b-4588-83ec-71b72ac8ceea" config-ref="JMS_Config" destination="q1" inboundContentType="application/json" transactionalAction="ALWAYS_BEGIN">
+			<jms:consumer-type >
+				<jms:queue-consumer />
+			</jms:consumer-type>
+			<jms:response outboundContentType="application/json" />
+		</jms:listener>
+		<try doc:name="Try" doc:id="73ebb388-038b-47c4-b3a7-ac5d51944dc4">
+			<logger level="INFO" doc:name="Logger" doc:id="32e680cd-93c8-4017-9ba0-6ef5b16edd76" message="started" />
+			<ee:transform doc:name="Transform Message" doc:id="7038f90e-b4c2-47f6-8f25-0960c2c182b8">
+			<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+			<jms:publish doc:name="Publish" doc:id="83e86b73-ce9b-400c-8e7f-281632207d74" config-ref="JMS_Config" destination="q2" transactionalAction="ALWAYS_JOIN">
+			<jms:message outboundContentType="application/json" />
+		</jms:publish>
+			<db:insert doc:name="Insert" doc:id="76d98ce4-4032-4765-90b0-1dd05da0a3b9" config-ref="Database_Config" transactionalAction="ALWAYS_JOIN">
+			<db:sql><![CDATA[insert into emp values(:id,:fn,:ln,:desig,:sal)]]></db:sql>
+			<db:input-parameters><![CDATA[#[{
+	id: payload.empID,
+	fn: payload.empFirstName,
+	ln: payload.empLastName,
+	desig: payload.empDesignation,
+	sal: payload.empSalary
+}]]]></db:input-parameters>
+		</db:insert>
+			<logger level="INFO" doc:name="Logger" doc:id="b0b94fa3-8c8a-444e-9397-fb5fd2cae350" message="successful" />
+		</try>
+	</flow>
+	<flow name="transactionFlow1" doc:id="624615e5-444a-43d7-b531-e22229406f21" >
+		<http:listener doc:name="Listener" doc:id="989c6034-2bb5-464c-be14-cd73574bc70f" config-ref="HTTP_Listener_config" path="/pgp"/>
+		<crypto:pgp-sign doc:name="Pgp sign" doc:id="dc3be545-0c39-4f75-9247-b094771e29ec" config-ref="Crypto_Pgp" keyId="mule1234"/>
+	</flow>
+	<flow name="transactionFlow2" doc:id="058e9a4e-e2be-44cb-9c60-eae42054e17a" >
+		<http:listener doc:name="Listener" doc:id="3cb9caa9-d483-4a25-b6fe-ff9854584bac" config-ref="HTTP_Listener_config" path="/pgp1"/>
+		<crypto:pgp-encrypt-and-sign doc:name="Pgp encrypt and sign" doc:id="88aece2f-0dbf-4e0c-bdad-366ad06baef8" config-ref="Crypto_Pgp1">
+			<crypto:encryption-key-selection keyId="laks12345" />
+			<crypto:sign-key-selection keyId="hman6789" />
+		</crypto:pgp-encrypt-and-sign>
+	</flow>
+	<flow name="transactionFlow3" doc:id="e4273abd-1158-45b4-9bab-26db244c742a" >
+		<http:listener doc:name="Listener" doc:id="47921749-f7ef-411e-9f0e-3c58c74e3566" config-ref="HTTP_Listener_config" path="/pgp2"/>
+		<crypto:pgp-decrypt doc:name="Pgp decrypt" doc:id="9cf7ea9d-c9a4-4320-909b-c5e8209fcf1b" config-ref="Crypto_Pgp"/>
+	</flow>
+</mule>
